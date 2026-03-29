@@ -1,0 +1,37 @@
+# HTTP メトリクス — サービス別のリクエスト数・レイテンシ・エラー率
+#
+# 使い方:
+#   px run -f pxl/http_metrics.pxl
+#
+# hello-k8s-pixie namespace 内の HTTP トラフィックを集計し、
+# Blue/Green サービスごとのパフォーマンスを表示する。
+
+import px
+
+# hello-k8s-pixie namespace の HTTP イベントを取得
+df = px.DataFrame('http_events', start_time='-5m')
+df = df[df.ctx['namespace'] == 'hello-k8s-pixie']
+
+# Pod 名からサービス名を抽出
+df.service = df.ctx['service']
+df.pod = df.ctx['pod']
+
+# レイテンシをミリ秒に変換
+df.latency_ms = df.resp_latency_ns / 1_000_000
+
+# エラー判定（4xx/5xx）
+df.is_error = df.resp_status >= 400
+
+# サービス別に集計
+stats = df.groupby('service').agg(
+    request_count=('resp_status', px.count),
+    error_count=('is_error', px.sum),
+    latency_p50=('latency_ms', px.quantiles, 0.5),
+    latency_p95=('latency_ms', px.quantiles, 0.95),
+    latency_p99=('latency_ms', px.quantiles, 0.99),
+    throughput_bytes=('resp_body_size', px.sum),
+)
+
+stats.error_rate = stats.error_count / stats.request_count * 100
+
+px.display(stats, 'HTTP Metrics by Service')
