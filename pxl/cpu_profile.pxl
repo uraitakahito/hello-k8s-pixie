@@ -1,0 +1,24 @@
+# CPU プロファイル — スタックトレースの集計（フレームグラフ用）
+#
+# 使い方:
+#   px run -f pxl/cpu_profile.pxl
+#
+# hello-k8s-pixie namespace 内の Pod の CPU スタックトレースを集計する。
+# Pixie の Web UI ではフレームグラフとして可視化できる。
+
+import px
+
+# hello-k8s-pixie namespace のスタックトレースを取得
+df = px.DataFrame('stack_traces', start_time='-5m')
+df = df[df.ctx['namespace'] == 'hello-k8s-pixie']
+
+# Pod とスタックトレース情報を抽出
+df.pod = df.ctx['pod']
+df.container = df.ctx['container']
+
+# スタックトレースごとにサンプル数を集計
+profile = df.groupby(['pod', 'container', 'stack_trace_id']).agg(
+    sample_count=('stack_trace_id', px.count),
+)
+
+px.display(profile, 'CPU Profile Samples')

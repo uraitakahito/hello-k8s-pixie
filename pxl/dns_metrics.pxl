@@ -1,0 +1,33 @@
+# DNS メトリクス — DNS クエリのレイテンシ・レスポンスコード分析
+#
+# 使い方:
+#   px run -f pxl/dns_metrics.pxl
+#
+# hello-k8s-pixie namespace 内の DNS クエリを集計し、
+# Kubernetes サービスディスカバリの DNS 動作を可視化する。
+
+import px
+
+# hello-k8s-pixie namespace の DNS イベントを取得
+df = px.DataFrame('dns_events', start_time='-5m')
+df = df[df.ctx['namespace'] == 'hello-k8s-pixie']
+
+# 基本情報を抽出
+df.pod = df.ctx['pod']
+df.latency_ms = df.resp_latency_ns / 1_000_000
+
+# クエリ名ごとの集計
+by_query = df.groupby(['pod', 'req_body']).agg(
+    query_count=('resp_body', px.count),
+    avg_latency_ms=('latency_ms', px.mean),
+    p99_latency_ms=('latency_ms', px.quantiles, 0.99),
+)
+
+px.display(by_query, 'DNS Queries by Pod')
+
+# レスポンスコード別の集計
+by_rcode = df.groupby('resp_body').agg(
+    count=('resp_body', px.count),
+)
+
+px.display(by_rcode, 'DNS Response Codes')

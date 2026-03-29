@@ -1,0 +1,30 @@
+# サービスマップ — Pod 間の通信関係とトラフィック量
+#
+# 使い方:
+#   px run -f pxl/service_map.pxl
+#
+# hello-k8s-pixie namespace 内の HTTP 通信から、
+# 送信元と宛先の Pod/Service ペアおよびトラフィック量を表示する。
+
+import px
+
+# hello-k8s-pixie namespace の HTTP イベントを取得
+df = px.DataFrame('http_events', start_time='-5m')
+df = df[df.ctx['namespace'] == 'hello-k8s-pixie']
+
+# 送信元・宛先の情報を抽出
+df.source = px.pod_id_to_pod_name(df.remote_addr_id)
+df.destination = df.ctx['pod']
+df.dest_service = df.ctx['service']
+
+# レイテンシをミリ秒に変換
+df.latency_ms = df.resp_latency_ns / 1_000_000
+
+# 送信元→宛先ペアごとに集計
+edge = df.groupby(['source', 'destination', 'dest_service']).agg(
+    request_count=('resp_status', px.count),
+    avg_latency_ms=('latency_ms', px.mean),
+    total_bytes=('resp_body_size', px.sum),
+)
+
+px.display(edge, 'Service Map Edges')
